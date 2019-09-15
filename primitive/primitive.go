@@ -31,13 +31,18 @@ const (
 // will be used.
 func WithMode(mode Mode) func() []string {
 	return func() []string {
-		return []string{"-n", fmt.Sprintf("%d", mode)}
+		return []string{"-m", fmt.Sprintf("%d", mode)}
 	}
 }
 
 // Transform will take the provided image and apply a primitivw
 // transformation to it , then return a reader to the resultingn image
-func Transform(image io.Reader, ext string, numShapes int, options ...func() []string) (io.Reader, error) {
+func Transform(image io.Reader, ext string, numShapes int, opts ...func() []string) (io.Reader, error) {
+
+	var args []string
+	for _, opt := range opts {
+		args = append(args, opt()...)
+	}
 	in, err := tempfile("_in", ext)
 	if err != nil {
 		return nil, errors.New("primitive: failed to create temp input file")
@@ -55,7 +60,7 @@ func Transform(image io.Reader, ext string, numShapes int, options ...func() []s
 		return nil, errors.New("primitive: failed to copy image into temp input file")
 	}
 
-	stdCombo, err := primitive(in.Name(), out.Name(), numShapes, ModeCombo)
+	stdCombo, err := primitive(in.Name(), out.Name(), numShapes, args...)
 	if err != nil {
 		return nil, fmt.Errorf("primitive: failed to run the primitive command")
 	}
@@ -68,9 +73,10 @@ func Transform(image io.Reader, ext string, numShapes int, options ...func() []s
 	return b, nil
 }
 
-func primitive(inputFile, outputFile string, numShape int, mode Mode) (string, error) {
-	args := fmt.Sprintf("-i %s -o %s -n %d -m %b", inputFile, outputFile, numShape, mode)
-	c := exec.Command("primitive", strings.Fields(args)...)
+func primitive(inputFile, outputFile string, numShape int, args ...string) (string, error) {
+	argStr := fmt.Sprintf("-i %s -o %s -n %d ", inputFile, outputFile, numShape)
+	args = append(strings.Fields(argStr), args...)
+	c := exec.Command("primitive", args...)
 	b, err := c.CombinedOutput()
 	if err != nil {
 		fmt.Println(err)
@@ -81,7 +87,7 @@ func primitive(inputFile, outputFile string, numShape int, mode Mode) (string, e
 
 func tempfile(prefix, ext string) (*os.File, error) {
 	//in, err := ioutil.Tempfile("","in_")
-	in, err := ioutil.TempFile("", "in_")
+	in, err := ioutil.TempFile("", prefix)
 	if err != nil {
 		return nil, errors.New("primitive: failed to create temp input file")
 	}
