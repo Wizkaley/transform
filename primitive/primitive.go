@@ -37,13 +37,13 @@ func WithMode(mode Mode) func() []string {
 
 // Transform will take the provided image and apply a primitivw
 // transformation to it , then return a reader to the resultingn image
-func Transform(image io.Reader, numShapes int, options ...func() []string) (io.Reader, error) {
-	in, err := tempfile("_in", "png")
+func Transform(image io.Reader, ext string, numShapes int, options ...func() []string) (io.Reader, error) {
+	in, err := tempfile("_in", ext)
 	if err != nil {
 		return nil, errors.New("primitive: failed to create temp input file")
 	}
 	defer os.Remove(in.Name())
-	out, err := tempfile("_in", "png")
+	out, err := tempfile("_in", ext)
 	if err != nil {
 		return nil, errors.New("primitive: failed to create temp output file")
 	}
