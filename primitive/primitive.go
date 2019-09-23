@@ -11,6 +11,11 @@ import (
 	"strings"
 )
 
+var (
+	IOCopyVar   = io.Copy
+	tempFileVar = tempfile
+)
+
 type Mode int
 
 //Modes supported by the primitive package
@@ -43,18 +48,18 @@ func Transform(image io.Reader, ext string, numShapes int, opts ...func() []stri
 	for _, opt := range opts {
 		args = append(args, opt()...)
 	}
-	in, err := tempfile("_in", ext)
+	in, err := tempFileVar("_in", ext)
 	if err != nil {
 		return nil, errors.New("primitive: failed to create temp input file")
 	}
 	defer os.Remove(in.Name())
-	out, err := tempfile("_in", ext)
+	out, err := tempFileVar("_in", ext)
 	if err != nil {
 		return nil, errors.New("primitive: failed to create temp output file")
 	}
 	defer os.Remove(out.Name())
 
-	_, err = io.Copy(in, image)
+	_, err = IOCopyVar(in, image)
 
 	if err != nil {
 		return nil, errors.New("primitive: failed to copy image into temp input file")
@@ -69,7 +74,7 @@ func Transform(image io.Reader, ext string, numShapes int, opts ...func() []stri
 	// }
 	fmt.Println(stdCombo)
 	b := bytes.NewBuffer(nil)
-	_, err = io.Copy(b, out)
+	_, err = IOCopyVar(b, out)
 	if err != nil {
 		return nil, errors.New("primitive: failed to copy output file into buffer")
 	}

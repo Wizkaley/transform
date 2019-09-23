@@ -14,17 +14,39 @@ import (
 	"transform/primitive"
 )
 
+var (
+	IOCopyVar      = io.Copy
+	tempFileVar    = tempfile
+	listenAndServe = http.ListenAndServe
+	tplExecuteBool = false
+	TempName       = ""
+)
+
 type genOpts struct {
 	N int
 	M primitive.Mode
 }
 
 func main() {
+	Controller()
+}
 
+func Controller() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		html := `<html>
+	mux.HandleFunc("/", BasePath)
+	mux.HandleFunc("/modify/", Modify)
+	mux.HandleFunc("/upload", Upload)
+
+	fs := http.FileServer(http.Dir("./img/"))
+	mux.Handle("/img/", http.StripPrefix("/img/", fs))
+	log.Fatal(listenAndServe(":3000", mux))
+	return mux
+}
+
+// BasePath ...
+func BasePath(w http.ResponseWriter, r *http.Request) {
+	html := `<html>
 		<form action="/upload" method="post" enctype="multipart/form-data">
 		<body>	
 		<input type="file" name="image"/>
@@ -32,64 +54,67 @@ func main() {
 		<form/>
 		</body>
 		</html>`
-		fmt.Fprint(w, html)
-	})
-	mux.HandleFunc("/modify/", func(w http.ResponseWriter, r *http.Request) {
-		//imgPath := r.URL.Path[len("/modify/"):]
+	fmt.Fprint(w, html)
+}
 
-		f, err := os.Open("./img/" + filepath.Base(r.URL.Path))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-		defer f.Close()
-		ext := filepath.Ext(f.Name())
-		modeStr := r.FormValue("mode")
-		if modeStr == "" {
-			renderModeChoices(w, r, f, ext)
-			return
-		}
-		mode, err := strconv.Atoi(modeStr)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		nStr := r.FormValue("n")
-		if nStr == "" {
-			renderNumShapeChoices(w, r, f, ext, primitive.Mode(mode))
-			return
-		}
-		numShapes, err := strconv.Atoi(nStr)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-		_ = numShapes
-		http.Redirect(w, r, "/img/"+filepath.Base(f.Name()), http.StatusFound)
-		w.Header().Set("Content-Type", "image/png")
-		io.Copy(w, f)
-	})
-	mux.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
-		file, header, err := r.FormFile("image")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		defer file.Close()
-		ext := filepath.Ext(header.Filename)[1:]
-		onDisk, err := tempfile("", ext)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-		defer onDisk.Close()
-		_, err = io.Copy(onDisk, file)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-		http.Redirect(w, r, "/modify/"+filepath.Base(onDisk.Name()), http.StatusFound)
-	})
+// Modify ...
+func Modify(w http.ResponseWriter, r *http.Request) {
+	//imgPath := r.URL.Path[len("/modify/"):]
 
-	fs := http.FileServer(http.Dir("./img/"))
-	mux.Handle("/img/", http.StripPrefix("/img/", fs))
-	log.Fatal(http.ListenAndServe(":3000", mux))
+	f, err := os.Open("./img/" + filepath.Base(r.URL.Path))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer f.Close()
+	ext := filepath.Ext(f.Name())
+	modeStr := r.FormValue("mode")
+	if modeStr == "" {
+		renderModeChoices(w, r, f, ext)
+		return
+	}
+	mode, err := strconv.Atoi(modeStr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	nStr := r.FormValue("n")
+	if nStr == "" {
+		renderNumShapeChoices(w, r, f, ext, primitive.Mode(mode))
+		return
+	}
+	numShapes, err := strconv.Atoi(nStr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+	_ = numShapes
+	http.Redirect(w, r, "/img/"+filepath.Base(f.Name()), http.StatusFound)
+	w.Header().Set("Content-Type", "image/png")
+	IOCopyVar(w, f)
+}
+
+//Upload ...
+func Upload(w http.ResponseWriter, r *http.Request) {
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		log.Printf("No file found for the key specified : %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	ext := filepath.Ext(header.Filename)[1:]
+	onDisk, err := tempFileVar("", ext)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer onDisk.Close()
+	_, err = IOCopyVar(onDisk, file)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/modify/"+filepath.Base(onDisk.Name()), http.StatusFound)
 }
 
 func renderNumShapeChoices(w http.ResponseWriter, r *http.Request, rs io.ReadSeeker, ext string, mode primitive.Mode) {
@@ -113,7 +138,7 @@ func renderNumShapeChoices(w http.ResponseWriter, r *http.Request, rs io.ReadSee
 	}
 	imgs, err := genImages(rs, ext, opts...)
 	if err != nil {
-		panic(err)
+		//panic(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -141,8 +166,8 @@ func renderNumShapeChoices(w http.ResponseWriter, r *http.Request, rs io.ReadSee
 		})
 		err = tpl.Execute(w, data)
 
-		if err != nil {
-			panic(err)
+		if err != nil || tplExecuteBool {
+			log.Println("tpl execution failed")
 		}
 
 	}
@@ -170,7 +195,6 @@ func renderModeChoices(w http.ResponseWriter, r *http.Request, rs io.ReadSeeker,
 
 	imgs, err := genImages(rs, ext, opts...)
 	if err != nil {
-		panic(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -196,8 +220,8 @@ func renderModeChoices(w http.ResponseWriter, r *http.Request, rs io.ReadSeeker,
 		})
 		err = tpl.Execute(w, data)
 
-		if err != nil {
-			panic(err)
+		if err != nil || tplExecuteBool {
+			log.Println("tpl execution failed")
 		}
 
 	}
@@ -224,12 +248,16 @@ func genImage(r io.Reader, ext string, numShapes int, mode primitive.Mode) (stri
 	if err != nil {
 		return "", err
 	}
-	outFile, err := tempfile("", ext)
+	outFile, err := tempFileVar(TempName, ext)
 	if err != nil {
 		return "", err
 	}
 	defer outFile.Close()
-	io.Copy(outFile, out)
+	_, err = IOCopyVar(outFile, out)
+	if err != nil {
+		log.Println("IO Copy failed")
+		return "", err
+	}
 	return outFile.Name(), nil
 }
 func tempfile(prefix, ext string) (*os.File, error) {
